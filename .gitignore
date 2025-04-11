@@ -1,3 +1,4 @@
+models/config/gpt_config.env
 pid_info.sh
 logs/
 data/results/cypher_rag_output_2M_spoke.csv

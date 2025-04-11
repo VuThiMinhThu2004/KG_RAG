@@ -19,6 +19,9 @@ from kg_rag.config_loader import *
 import ast
 import requests
 
+from  kg_rag.gpt_request import *
+
+
 memory = Memory("cachegpt", verbose=0)
 
 # Config openai library
@@ -148,61 +151,110 @@ def llama_model(model_name, branch_name, cache_dir, temperature=0, top_p=1, max_
         tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                  revision=branch_name,
                                                  cache_dir=cache_dir)
-        model = AutoModelForCausalLM.from_pretrained(model_name,                                             
-                                            device_map='auto',
-                                            torch_dtype=torch.float16,
-                                            revision=branch_name,
-                                            cache_dir=cache_dir
-                                            )
+        # model = AutoModelForCausalLM.from_pretrained(model_name,                                             
+        #                                     device_map='auto',
+        #                                     torch_dtype=torch.float16,
+        #                                     revision=branch_name,
+        #                                     cache_dir=cache_dir
+        #                                     )
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto" if torch.cuda.is_available() else None,  # Sử dụng GPU nếu có
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,  # Sử dụng float32 trên CPU
+            revision=branch_name,
+            cache_dir=cache_dir
+        )
+        
     elif method == 'method-2':
         import transformers
         tokenizer = transformers.LlamaTokenizer.from_pretrained(model_name, 
                                                                 revision=branch_name, 
                                                                 cache_dir=cache_dir, 
                                                                 legacy=False)
+        # model = transformers.LlamaForCausalLM.from_pretrained(model_name, 
+        #                                                       device_map='auto', 
+        #                                                       torch_dtype=torch.float16, 
+        #                                                       revision=branch_name, 
+        #                                                       cache_dir=cache_dir)        
+        
         model = transformers.LlamaForCausalLM.from_pretrained(model_name, 
-                                                              device_map='auto', 
-                                                              torch_dtype=torch.float16, 
+                                                              device_map="auto" if torch.cuda.is_available() else None,  # Sử dụng GPU nếu có
+                                                              torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,  # Sử dụng float32 trên CPU
                                                               revision=branch_name, 
                                                               cache_dir=cache_dir)        
+        
+    # if not stream:
+    #     pipe = pipeline("text-generation",
+    #                 model = model,
+    #                 tokenizer = tokenizer,
+    #                 torch_dtype = torch.bfloat16,
+    #                 device_map = "auto",
+    #                 max_new_tokens = max_new_tokens,
+    #                 do_sample = True
+    #                 )
+    # else:
+    #     streamer = TextStreamer(tokenizer)
+    #     pipe = pipeline("text-generation",
+    #                 model = model,
+    #                 tokenizer = tokenizer,
+    #                 torch_dtype = torch.bfloat16,
+    #                 device_map = "auto",
+    #                 max_new_tokens = max_new_tokens,
+    #                 do_sample = True,
+    #                 streamer=streamer
+    #                 )   
+    
     if not stream:
         pipe = pipeline("text-generation",
-                    model = model,
-                    tokenizer = tokenizer,
-                    torch_dtype = torch.bfloat16,
-                    device_map = "auto",
-                    max_new_tokens = max_new_tokens,
-                    do_sample = True
+                    model=model,
+                    tokenizer=tokenizer,
+                    torch_dtype=torch.float32,  # Sử dụng float32 thay vì bfloat16
+                    device_map="auto",
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True
                     )
     else:
         streamer = TextStreamer(tokenizer)
         pipe = pipeline("text-generation",
-                    model = model,
-                    tokenizer = tokenizer,
-                    torch_dtype = torch.bfloat16,
-                    device_map = "auto",
-                    max_new_tokens = max_new_tokens,
-                    do_sample = True,
+                    model=model,
+                    tokenizer=tokenizer,
+                    torch_dtype=torch.float32,  # Sử dụng float32 thay vì bfloat16
+                    device_map="auto",
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
                     streamer=streamer
                     )        
+     
     llm = HuggingFacePipeline(pipeline = pipe,
                               model_kwargs = {"temperature":temperature, "top_p":top_p})
     return llm
 
 
-
 @retry(wait=wait_random_exponential(min=10, max=30), stop=stop_after_attempt(5))
 def fetch_GPT_response(instruction, system_prompt, chat_model_id, chat_deployment_id, temperature=0):
     # print('Calling OpenAI...')
-    response = openai.ChatCompletion.create(
-        temperature=temperature,
-        deployment_id=chat_deployment_id,
-        model=chat_model_id,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": instruction}
-        ]
-    )
+    # response = openai.ChatCompletion.create(
+    #     temperature=temperature,
+    #     deployment_id=chat_deployment_id,
+    #     model=chat_model_id,
+    #     messages=[
+    #         {"role": "system", "content": system_prompt},
+    #         {"role": "user", "content": instruction}
+    #     ]
+    # )
+    """
+    Gọi GPT từ endpoint tùy chỉnh, bỏ qua OpenAI SDK.
+    `chat_deployment_id` giữ lại cho tương thích nhưng không sử dụng.
+    """
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": instruction}
+    ]
+    
+    response = request_api(messages=messages, temperature=temperature)
+
+    
     if 'choices' in response \
        and isinstance(response['choices'], list) \
        and len(response) >= 0 \
@@ -244,6 +296,9 @@ def disease_entity_extractor_v2(text):
     chat_model_id, chat_deployment_id = get_gpt35()
     prompt_updated = system_prompts["DISEASE_ENTITY_EXTRACTION"] + "\n" + "Sentence : " + text
     resp = get_GPT_response(prompt_updated, system_prompts["DISEASE_ENTITY_EXTRACTION"], chat_model_id, chat_deployment_id, temperature=0)
+    
+    # print("thu - resp: ", resp)
+    
     try:
         entity_dict = json.loads(resp)
         return entity_dict["Diseases"]
@@ -265,7 +320,14 @@ def retrieve_context(question, vectorstore, embedding_function, node_context_df,
         max_number_of_high_similarity_context_per_node = int(context_volume/len(entities))
         for entity in entities:
             node_search_result = vectorstore.similarity_search_with_score(entity, k=1)
-            node_hits.append(node_search_result[0][0].page_content)
+            print("Debug")
+            print(f"Search result for entity '{entity}': {node_search_result}")
+            
+            if node_search_result:
+                node_hits.append(node_search_result[0][0].page_content)
+            else:
+                print(f"No results found for entity: {entity}")
+                
         question_embedding = embedding_function.embed_query(question)
         node_context_extracted = ""
         for node_name in node_hits:
@@ -327,6 +389,10 @@ def interactive(question, vectorstore, node_context_df, embedding_function_for_c
     input("Press enter for Step 1 - Disease entity extraction using GPT-3.5-Turbo")
     print("Processing ...")
     entities = disease_entity_extractor_v2(question)
+    
+    #THU add
+    #print(f"Entities: {entities}")
+
     max_number_of_high_similarity_context_per_node = int(config_data["CONTEXT_VOLUME"]/len(entities))
     print("Extracted entity from the prompt = '{}'".format(", ".join(entities)))
     print(" ")
