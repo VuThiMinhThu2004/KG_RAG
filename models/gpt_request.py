@@ -62,26 +62,26 @@ def request_api(messages, model="gpt-4o-mini", temperature=0):
         raise RuntimeError(f"API request failed: {response.status_code} - {response.text}")
       
       
-def request_api(text):
-    logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-    logging.getLogger("requests").setLevel(logging.CRITICAL)
-    logging.getLogger("http.client").setLevel(logging.CRITICAL)
+# def request_api(text):
+#     logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+#     logging.getLogger("requests").setLevel(logging.CRITICAL)
+#     logging.getLogger("http.client").setLevel(logging.CRITICAL)
 
-    headers = {
-        "Authorization": f"{api}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+#     headers = {
+#         "Authorization": f"{api}",
+#         "Content-Type": "application/json",
+#         "Accept": "application/json",
+#     }
 
-    data = {
-      "model": "gpt-4o-mini",
-      "messages": [
-        {
-          "role": "user",
-          "content": text
-        }
-      ],
-    }
+#     data = {
+#       "model": "gpt-4o-mini",
+#       "messages": [
+#         {
+#           "role": "user",
+#           "content": text
+#         }
+#       ],
+#     }
 
-    response = requests.post(API_URL, headers=headers, json=data)
-    return response
+#     response = requests.post(API_URL, headers=headers, json=data)
+#     return response

@@ -21,7 +21,7 @@ def main():
     for index, row in question_df.iterrows():
         question = "Question: "+ row["text"]
         output = get_GPT_response(question, SYSTEM_PROMPT, CHAT_MODEL_ID, CHAT_DEPLOYMENT_ID, temperature=TEMPERATURE)
-        answer_list.append((row["text"], row["correct_node"], output))                  
+        answer_list.append((row["text"], row["correct_node"], output))    #lưu câu hỏi, câu trả lời đúng, câu trả lời của gpt              
     answer_df = pd.DataFrame(answer_list, columns=["question", "correct_answer", "llm_answer"])
     answer_df.to_csv(os.path.join(SAVE_PATH, save_name), index=False, header=True)
     print("Completed in {} min".format((time.time()-start_time)/60))

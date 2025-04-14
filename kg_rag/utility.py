@@ -312,7 +312,7 @@ def load_sentence_transformer(sentence_embedding_model):
 def load_chroma(vector_db_path, sentence_embedding_model):
     embedding_function = load_sentence_transformer(sentence_embedding_model)
     return Chroma(persist_directory=vector_db_path, embedding_function=embedding_function)
-
+ 
 def retrieve_context(question, vectorstore, embedding_function, node_context_df, context_volume, context_sim_threshold, context_sim_min_threshold, edge_evidence, api=True):
     entities = disease_entity_extractor_v2(question)
     node_hits = []
@@ -320,7 +320,7 @@ def retrieve_context(question, vectorstore, embedding_function, node_context_df,
         max_number_of_high_similarity_context_per_node = int(context_volume/len(entities))
         for entity in entities:
             node_search_result = vectorstore.similarity_search_with_score(entity, k=1)
-            print("Debug")
+            print("Thu print")
             print(f"Search result for entity '{entity}': {node_search_result}")
             
             if node_search_result:
