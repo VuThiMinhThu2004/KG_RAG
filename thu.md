@@ -22,7 +22,14 @@ What drugs are currently approved for treating Duchenne muscular dystrophy?
 
 Are there any drugs used for weight management in patients with Bardet-Biedl Syndrome?
 
+What compounds are used to treat Alagille syndrome, and what other diseases share similar clinical features with it?
+
+MedHopQA:
+Q1:
 Which benign, autosomal recessive hyperbilirubinemia syndrome is caused by a mutation in the UGT1A1 gene on chromosome 2?
+- gene
+Q2:
+
 
 # DATASET
 ## benchmark_data

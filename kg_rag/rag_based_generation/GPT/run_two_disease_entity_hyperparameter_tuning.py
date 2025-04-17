@@ -28,22 +28,44 @@ SENTENCE_EMBEDDING_MODEL_FOR_NODE_RETRIEVAL = config_data["SENTENCE_EMBEDDING_MO
 TEMPERATURE = config_data["LLM_TEMPERATURE"]
 SAVE_PATH = config_data["SAVE_RESULTS_PATH"]
 
+CHAT_DEPLOYMENT_ID = CHAT_MODEL_ID
+
 vectorstore = load_chroma(VECTOR_DB_PATH, SENTENCE_EMBEDDING_MODEL_FOR_NODE_RETRIEVAL)
-embedding_function_for_context_retrieval = load_sentence_transformer(SENTENCE_EMBEDDING_MODEL_FOR_CONTEXT_RETRIEVAL)
+# embedding_function_for_context_retrieval = load_sentence_transformer(SENTENCE_EMBEDDING_MODEL_FOR_CONTEXT_RETRIEVAL)
 node_context_df = pd.read_csv(NODE_CONTEXT_PATH)
 edge_evidence = False
 
+# def main():
+#     start_time = time.time()
+#     question_df = pd.read_csv(QUESTION_PATH)
+#     for tranformer_index, sentence_embedding_model_for_context_retrieval in enumerate(SENTENCE_EMBEDDING_MODEL_FOR_CONTEXT_RETRIEVAL_LIST):
+#         for context_index, context_volume in enumerate(CONTEXT_VOLUME_LIST):
+#             answer_list = []
+#             for index, row in question_df.iterrows():
+#                 question = row["text"]
+#                 context = retrieve_context(question, vectorstore, embedding_function_for_context_retrieval, node_context_df, context_volume, QUESTION_VS_CONTEXT_SIMILARITY_PERCENTILE_THRESHOLD, QUESTION_VS_CONTEXT_MINIMUM_SIMILARITY, edge_evidence)
+#                 enriched_prompt = "Context: "+ context + "\n" + "Question: " + question
+#                 output = get_GPT_response(enriched_prompt, system_prompt, CHAT_MODEL_ID, CHAT_DEPLOYMENT_ID, temperature=temperature)
+#                 if not output:
+#                     time.sleep(5)
+#                 answer_list.append((row["disease_1"], row["disease_2"], row["central_nodes"], row["text"], output, context_volume))
+#         answer_df = pd.DataFrame(answer_list, columns=["disease_1", "disease_2", "central_nodes_groundTruth", "text", "llm_answer", "context_volume"])
+#         save_name = "_".join(CHAT_MODEL_ID.split("-"))+SAVE_NAME_LIST[tranformer_index].format(context_index+1)
+#         answer_df.to_csv(os.path.join(SAVE_PATH, save_name), index=False, header=True)
+#     print("Completed in {} min".format((time.time()-start_time)/60))
+    
 def main():
     start_time = time.time()
     question_df = pd.read_csv(QUESTION_PATH)
     for tranformer_index, sentence_embedding_model_for_context_retrieval in enumerate(SENTENCE_EMBEDDING_MODEL_FOR_CONTEXT_RETRIEVAL_LIST):
+        embedding_function_for_context_retrieval = load_sentence_transformer(sentence_embedding_model_for_context_retrieval)
         for context_index, context_volume in enumerate(CONTEXT_VOLUME_LIST):
             answer_list = []
             for index, row in question_df.iterrows():
                 question = row["text"]
                 context = retrieve_context(question, vectorstore, embedding_function_for_context_retrieval, node_context_df, context_volume, QUESTION_VS_CONTEXT_SIMILARITY_PERCENTILE_THRESHOLD, QUESTION_VS_CONTEXT_MINIMUM_SIMILARITY, edge_evidence)
                 enriched_prompt = "Context: "+ context + "\n" + "Question: " + question
-                output = get_GPT_response(enriched_prompt, system_prompt, CHAT_MODEL_ID, CHAT_DEPLOYMENT_ID, temperature=temperature)
+                output = get_GPT_response(enriched_prompt, SYSTEM_PROMPT, CHAT_MODEL_ID, CHAT_DEPLOYMENT_ID, temperature=TEMPERATURE)
                 if not output:
                     time.sleep(5)
                 answer_list.append((row["disease_1"], row["disease_2"], row["central_nodes"], row["text"], output, context_volume))

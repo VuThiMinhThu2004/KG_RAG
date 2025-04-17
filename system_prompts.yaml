@@ -5,6 +5,19 @@ DISEASE_ENTITY_EXTRACTION: |
   Diseases: <List of extracted entities>
   Please report only Diseases. Do not report any other entities like Genes, Proteins, Enzymes etc.
 
+# ENTITY_EXTRACTION_MULTI_LABEL
+ENTITY_EXTRACTION_MULTI_LABEL: |
+  You are an expert biomedical entity extractor. 
+  From the given sentence, extract all entities of the following types: Disease, Drug, Gene.
+  Output the result in JSON format like this:
+  {
+    "Diseases": <List of extracted entities>,
+    "Drugs": <List of extracted entities>,
+    "Genes": <List of extracted entities>
+  }
+  Only include relevant entities. Do not guess. The type must be one of: Disease, Drug, Gene.
+
+
 # One-Hop Validation
 SINGLE_DISEASE_ENTITY_VALIDATION: |
   You are an expert biomedical researcher. For answering the Question at the end, you need to first read the Context provided.

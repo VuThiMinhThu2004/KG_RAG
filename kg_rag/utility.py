@@ -20,6 +20,8 @@ import ast
 import requests
 
 from  kg_rag.gpt_request import *
+import logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 memory = Memory("cachegpt", verbose=0)
@@ -41,7 +43,6 @@ torch.cuda.empty_cache()
 B_INST, E_INST = "[INST]", "[/INST]"
 B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
 
-
 def get_spoke_api_resp(base_uri, end_point, params=None):
     uri = base_uri + end_point
     if params:
@@ -50,7 +51,7 @@ def get_spoke_api_resp(base_uri, end_point, params=None):
         return requests.get(uri)
 
 @retry(wait=wait_random_exponential(min=10, max=30), stop=stop_after_attempt(5))
-def get_context_using_spoke_api(node_value):
+def get_context_using_spoke_api(node_type, node_value):
     type_end_point = "/api/v1/types"
     result = get_spoke_api_resp(config_data['BASE_URI'], type_end_point)
     data_spoke_types = result.json()
@@ -71,7 +72,7 @@ def get_context_using_spoke_api(node_value):
         'cutoff_DpL_average_prevalence': config_data['cutoff_DpL_average_prevalence'],
         'depth' : config_data['depth']
     }
-    node_type = "Disease"
+    # node_type = "Disease"
     attribute = "name"
     nbr_end_point = "/api/v1/neighborhood/{}/{}/{}".format(node_type, attribute, node_value)
     result = get_spoke_api_resp(config_data['BASE_URI'], nbr_end_point, params=api_params)
@@ -304,7 +305,6 @@ def disease_entity_extractor_v2(text):
         return entity_dict["Diseases"]
     except:
         return None
-    
 
 def load_sentence_transformer(sentence_embedding_model):
     return SentenceTransformerEmbeddings(model_name=sentence_embedding_model)
@@ -312,78 +312,453 @@ def load_sentence_transformer(sentence_embedding_model):
 def load_chroma(vector_db_path, sentence_embedding_model):
     embedding_function = load_sentence_transformer(sentence_embedding_model)
     return Chroma(persist_directory=vector_db_path, embedding_function=embedding_function)
- 
+
+def biomedical_entity_extractor(text):
+    chat_model_id, chat_deployment_id = get_gpt35()
+    
+    prompt = system_prompts["ENTITY_EXTRACTION_MULTI_LABEL"] + "\nSentence: " + text
+    resp = get_GPT_response(
+        prompt,
+        system_prompts["ENTITY_EXTRACTION_MULTI_LABEL"],
+        chat_model_id,
+        chat_deployment_id,
+        temperature=0
+    )
+    
+    try:
+        entity_dict = json.loads(resp)
+        return entity_dict  # entity_dict có các key: "Diseases", "Drugs", "Genes"
+    except Exception as e:
+        print("Error parsing response:", e)
+        print("Raw response:", resp)
+        return None
+
 def retrieve_context(question, vectorstore, embedding_function, node_context_df, context_volume, context_sim_threshold, context_sim_min_threshold, edge_evidence, api=True):
-    entities = disease_entity_extractor_v2(question)
+    entity_dict = biomedical_entity_extractor(question)
+    disease_entities = entity_dict.get("Diseases", []) if entity_dict else []
+    drug_entities = entity_dict.get("Drugs", []) if entity_dict else []
+    gene_entities = entity_dict.get("Genes", []) if entity_dict else []
+
+    logging.debug(f"Extracted Entities: Diseases={disease_entities}, Drugs={drug_entities}, Genes={gene_entities}")
+
     node_hits = []
-    if entities:
-        max_number_of_high_similarity_context_per_node = int(context_volume/len(entities))
-        for entity in entities:
+    node_context_extracted = ""
+    question_embedding = embedding_function.embed_query(question)
+
+    total_entities = len(disease_entities) + len(drug_entities) + len(gene_entities)
+    max_context_per_node = max(1, int(context_volume / max(1, total_entities)))
+
+    def process_entities(entity_list, get_context_fn, entity_type):
+        nonlocal node_context_extracted
+        for entity in entity_list:
+            logging.debug(f"Processing {entity_type} entity: {entity}")
             node_search_result = vectorstore.similarity_search_with_score(entity, k=1)
-            print("Thu print")
-            print(f"Search result for entity '{entity}': {node_search_result}")
-            
-            if node_search_result:
-                node_hits.append(node_search_result[0][0].page_content)
-            else:
-                print(f"No results found for entity: {entity}")
-                
-        question_embedding = embedding_function.embed_query(question)
-        node_context_extracted = ""
-        for node_name in node_hits:
+            if not node_search_result:
+                logging.warning(f"No search result for entity: {entity}")
+                continue
+
+            node_name = node_search_result[0][0].page_content
+            logging.debug(f"Top matched node for {entity}: {node_name}")
+
             if not api:
                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+                context_table = None
             else:
-                node_context,context_table = get_context_using_spoke_api(node_name)
-            node_context_list = node_context.split(". ")        
+                node_context, context_table = get_context_fn(entity_type, node_name)
+                logging.debug(f"Fetched context from API for {node_name}")
+
+            node_context_list = node_context.split(". ")
             node_context_embeddings = embedding_function.embed_documents(node_context_list)
-            similarities = [cosine_similarity(np.array(question_embedding).reshape(1, -1), np.array(node_context_embedding).reshape(1, -1)) for node_context_embedding in node_context_embeddings]
-            similarities = sorted([(e, i) for i, e in enumerate(similarities)], reverse=True)
+
+            similarities = [
+                cosine_similarity(
+                    np.array(question_embedding).reshape(1, -1),
+                    np.array(ctx_emb).reshape(1, -1)
+                ) for ctx_emb in node_context_embeddings
+            ]
+            similarities = sorted([(s[0], i) for i, s in enumerate(similarities)], reverse=True)
+
+            logging.debug(f"Similarities for node {node_name}: {similarities[:5]}")
+
             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
-            high_similarity_indices = [s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold]
-            if len(high_similarity_indices) > max_number_of_high_similarity_context_per_node:
-                high_similarity_indices = high_similarity_indices[:max_number_of_high_similarity_context_per_node]
-            high_similarity_context = [node_context_list[index] for index in high_similarity_indices]            
-            if edge_evidence:
-                high_similarity_context = list(map(lambda x:x+'.', high_similarity_context)) 
+            high_similarity_indices = [
+                s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold
+            ]
+            logging.debug(f"Selected indices for context (>{context_sim_threshold} percentile): {high_similarity_indices}")
+
+            if len(high_similarity_indices) > max_context_per_node:
+                high_similarity_indices = high_similarity_indices[:max_context_per_node]
+
+            high_similarity_context = [node_context_list[i] for i in high_similarity_indices]
+            logging.debug(f"Selected context sentences: {high_similarity_context}")
+
+            if edge_evidence and context_table is not None:
+                high_similarity_context = list(map(lambda x: x + '.', high_similarity_context))
                 context_table = context_table[context_table.context.isin(high_similarity_context)]
-                context_table.loc[:, "context"] =  context_table.source + " " + context_table.predicate.str.lower() + " " + context_table.target + " and Provenance of this association is " + context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " + context_table.evidence.astype('str') + "\n\n"                
+                context_table.loc[:, "context"] = (
+                    context_table.source + " " + context_table.predicate.str.lower() + " " +
+                    context_table.target + " and Provenance of this association is " +
+                    context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " +
+                    context_table.evidence.astype('str') + "\n\n"
+                )
                 node_context_extracted += context_table.context.str.cat(sep=' ')
             else:
-                node_context_extracted += ". ".join(high_similarity_context)
-                node_context_extracted += ". "
-        return node_context_extracted
-    else:
+                node_context_extracted += ". ".join(high_similarity_context) + ". "
+
+    # Gọi API theo từng loại entity
+    process_entities(disease_entities, get_context_using_spoke_api, "Disease")
+    process_entities(drug_entities, get_context_using_spoke_api, "Compound") #"Drug"
+    process_entities(gene_entities, get_context_using_spoke_api, "Gene")
+
+    # Fallback nếu không có entity
+    if total_entities == 0:
+        logging.info("No entities found, fallback to question-based search.")
         node_hits = vectorstore.similarity_search_with_score(question, k=5)
-        max_number_of_high_similarity_context_per_node = int(context_volume/5)
-        question_embedding = embedding_function.embed_query(question)
-        node_context_extracted = ""
+        max_context_per_node = max(1, int(context_volume / 5))
+
         for node in node_hits:
             node_name = node[0].page_content
+            logging.debug(f"Fallback node: {node_name}")
+
             if not api:
                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+                context_table = None
             else:
-                node_context, context_table = get_context_using_spoke_api(node_name)
-            node_context_list = node_context.split(". ")        
+                node_context, context_table = get_context_using_spoke_api("Disease", node_name)
+                logging.debug(f"Fetched fallback context from API for {node_name}")
+
+            node_context_list = node_context.split(". ")
             node_context_embeddings = embedding_function.embed_documents(node_context_list)
-            similarities = [cosine_similarity(np.array(question_embedding).reshape(1, -1), np.array(node_context_embedding).reshape(1, -1)) for node_context_embedding in node_context_embeddings]
-            similarities = sorted([(e, i) for i, e in enumerate(similarities)], reverse=True)
+
+            similarities = [
+                cosine_similarity(
+                    np.array(question_embedding).reshape(1, -1),
+                    np.array(ctx_emb).reshape(1, -1)
+                ) for ctx_emb in node_context_embeddings
+            ]
+            similarities = sorted([(s[0], i) for i, s in enumerate(similarities)], reverse=True)
+
+            logging.debug(f"Similarities for fallback node {node_name}: {similarities[:5]}")
+
             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
-            high_similarity_indices = [s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold]
-            if len(high_similarity_indices) > max_number_of_high_similarity_context_per_node:
-                high_similarity_indices = high_similarity_indices[:max_number_of_high_similarity_context_per_node]
-            high_similarity_context = [node_context_list[index] for index in high_similarity_indices]
-            if edge_evidence:
-                high_similarity_context = list(map(lambda x:x+'.', high_similarity_context))
+            high_similarity_indices = [
+                s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold
+            ]
+
+            if len(high_similarity_indices) > max_context_per_node:
+                high_similarity_indices = high_similarity_indices[:max_context_per_node]
+
+            high_similarity_context = [node_context_list[i] for i in high_similarity_indices]
+            logging.debug(f"Selected fallback context: {high_similarity_context}")
+
+            if edge_evidence and context_table is not None:
+                high_similarity_context = list(map(lambda x: x + '.', high_similarity_context))
                 context_table = context_table[context_table.context.isin(high_similarity_context)]
-                context_table.loc[:, "context"] =  context_table.source + " " + context_table.predicate.str.lower() + " " + context_table.target + " and Provenance of this association is " + context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " + context_table.evidence.astype('str') + "\n\n"                
+                context_table.loc[:, "context"] = (
+                    context_table.source + " " + context_table.predicate.str.lower() + " " +
+                    context_table.target + " and Provenance of this association is " +
+                    context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " +
+                    context_table.evidence.astype('str') + "\n\n"
+                )
                 node_context_extracted += context_table.context.str.cat(sep=' ')
             else:
-                node_context_extracted += ". ".join(high_similarity_context)
-                node_context_extracted += ". "
-        return node_context_extracted
+                node_context_extracted += ". ".join(high_similarity_context) + ". "
+
+    return node_context_extracted
     
+# def retrieve_context(question, vectorstore, embedding_function, node_context_df, context_volume, context_sim_threshold, context_sim_min_threshold, edge_evidence, api=True):
+#     entity_dict = biomedical_entity_extractor(question)
+#     disease_entities = entity_dict.get("Diseases", []) if entity_dict else []
+#     drug_entities = entity_dict.get("Drugs", []) if entity_dict else []
+#     gene_entities = entity_dict.get("Genes", []) if entity_dict else []
+
+#     node_hits = []
+#     node_context_extracted = ""
+#     question_embedding = embedding_function.embed_query(question)
+
+#     # Tổng số entity để chia đều context volume
+#     total_entities = len(disease_entities) + len(drug_entities) + len(gene_entities)
+#     max_context_per_node = max(1, int(context_volume / max(1, total_entities)))
+
+#     def process_entities(entity_list, get_context_fn):
+#         nonlocal node_context_extracted
+
+#         for entity in entity_list:
+#             node_search_result = vectorstore.similarity_search_with_score(entity, k=1)
+#             if not node_search_result:
+#                 continue
+#             node_name = node_search_result[0][0].page_content
+
+#             if not api:
+#                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+#                 context_table = None
+#             else:
+#                 node_context, context_table = get_context_fn(node_name)
+
+#             node_context_list = node_context.split(". ")
+#             node_context_embeddings = embedding_function.embed_documents(node_context_list)
+
+#             similarities = [
+#                 cosine_similarity(
+#                     np.array(question_embedding).reshape(1, -1),
+#                     np.array(ctx_emb).reshape(1, -1)
+#                 ) for ctx_emb in node_context_embeddings
+#             ]
+#             similarities = sorted([(s[0], i) for i, s in enumerate(similarities)], reverse=True)
+
+#             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
+#             high_similarity_indices = [
+#                 s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold
+#             ]
+
+#             if len(high_similarity_indices) > max_context_per_node:
+#                 high_similarity_indices = high_similarity_indices[:max_context_per_node]
+
+#             high_similarity_context = [node_context_list[i] for i in high_similarity_indices]
+
+#             if edge_evidence and context_table is not None:
+#                 high_similarity_context = list(map(lambda x: x + '.', high_similarity_context))
+#                 context_table = context_table[context_table.context.isin(high_similarity_context)]
+#                 context_table.loc[:, "context"] = (
+#                     context_table.source + " " + context_table.predicate.str.lower() + " " +
+#                     context_table.target + " and Provenance of this association is " +
+#                     context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " +
+#                     context_table.evidence.astype('str') + "\n\n"
+#                 )
+#                 node_context_extracted += context_table.context.str.cat(sep=' ')
+#             else:
+#                 node_context_extracted += ". ".join(high_similarity_context) + ". "
+
+#     # Gọi API tương ứng từng loại
+#     process_entities(disease_entities, get_context_using_spoke_api_disease)
+#     process_entities(drug_entities, get_context_using_spoke_api_drug)
+#     process_entities(gene_entities, get_context_using_spoke_api_gene)
+
+#     # Nếu không có entity nào → fallback search theo câu hỏi
+#     if total_entities == 0:
+#         node_hits = vectorstore.similarity_search_with_score(question, k=5)
+#         max_context_per_node = max(1, int(context_volume / 5))
+
+#         for node in node_hits:
+#             node_name = node[0].page_content
+#             if not api:
+#                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+#                 context_table = None
+#             else:
+#                 node_context, context_table = get_context_using_spoke_api(node_name)
+
+#             node_context_list = node_context.split(". ")
+#             node_context_embeddings = embedding_function.embed_documents(node_context_list)
+
+#             similarities = [
+#                 cosine_similarity(
+#                     np.array(question_embedding).reshape(1, -1),
+#                     np.array(ctx_emb).reshape(1, -1)
+#                 ) for ctx_emb in node_context_embeddings
+#             ]
+#             similarities = sorted([(s[0], i) for i, s in enumerate(similarities)], reverse=True)
+
+#             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
+#             high_similarity_indices = [
+#                 s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold
+#             ]
+
+#             if len(high_similarity_indices) > max_context_per_node:
+#                 high_similarity_indices = high_similarity_indices[:max_context_per_node]
+
+#             high_similarity_context = [node_context_list[i] for i in high_similarity_indices]
+
+#             if edge_evidence and context_table is not None:
+#                 high_similarity_context = list(map(lambda x: x + '.', high_similarity_context))
+#                 context_table = context_table[context_table.context.isin(high_similarity_context)]
+#                 context_table.loc[:, "context"] = (
+#                     context_table.source + " " + context_table.predicate.str.lower() + " " +
+#                     context_table.target + " and Provenance of this association is " +
+#                     context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " +
+#                     context_table.evidence.astype('str') + "\n\n"
+#                 )
+#                 node_context_extracted += context_table.context.str.cat(sep=' ')
+#             else:
+#                 node_context_extracted += ". ".join(high_similarity_context) + ". "
+
+#     return node_context_extracted
+
+# def retrieve_context(question, vectorstore, embedding_function, node_context_df, context_volume, context_sim_threshold, context_sim_min_threshold, edge_evidence, api=True):
+#     entities = disease_entity_extractor_v2(question)
+#     node_hits = []
+#     if entities:
+#         max_number_of_high_similarity_context_per_node = int(context_volume/len(entities))
+#         for entity in entities:
+#             node_search_result = vectorstore.similarity_search_with_score(entity, k=1)
+#             print("Thu print")
+#             print(f"Search result for entity '{entity}': {node_search_result}")
+            
+#             if node_search_result:
+#                 node_hits.append(node_search_result[0][0].page_content)
+#             else:
+#                 print(f"No results found for entity: {entity}")
+                
+#         question_embedding = embedding_function.embed_query(question)
+#         node_context_extracted = ""
+#         for node_name in node_hits:
+#             if not api:
+#                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+#             else:
+#                 node_context,context_table = get_context_using_spoke_api(node_name)
+#             node_context_list = node_context.split(". ")        
+#             node_context_embeddings = embedding_function.embed_documents(node_context_list)
+#             similarities = [cosine_similarity(np.array(question_embedding).reshape(1, -1), np.array(node_context_embedding).reshape(1, -1)) for node_context_embedding in node_context_embeddings]
+#             similarities = sorted([(e, i) for i, e in enumerate(similarities)], reverse=True)
+#             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
+#             high_similarity_indices = [s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold]
+#             if len(high_similarity_indices) > max_number_of_high_similarity_context_per_node:
+#                 high_similarity_indices = high_similarity_indices[:max_number_of_high_similarity_context_per_node]
+#             high_similarity_context = [node_context_list[index] for index in high_similarity_indices]            
+#             if edge_evidence:
+#                 high_similarity_context = list(map(lambda x:x+'.', high_similarity_context)) 
+#                 context_table = context_table[context_table.context.isin(high_similarity_context)]
+#                 context_table.loc[:, "context"] =  context_table.source + " " + context_table.predicate.str.lower() + " " + context_table.target + " and Provenance of this association is " + context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " + context_table.evidence.astype('str') + "\n\n"                
+#                 node_context_extracted += context_table.context.str.cat(sep=' ')
+#             else:
+#                 node_context_extracted += ". ".join(high_similarity_context)
+#                 node_context_extracted += ". "
+#         return node_context_extracted
+#     else:
+#         node_hits = vectorstore.similarity_search_with_score(question, k=5)
+#         max_number_of_high_similarity_context_per_node = int(context_volume/5)
+#         question_embedding = embedding_function.embed_query(question)
+#         node_context_extracted = ""
+#         for node in node_hits:
+#             node_name = node[0].page_content
+#             if not api:
+#                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+#             else:
+#                 node_context, context_table = get_context_using_spoke_api(node_name)
+#             node_context_list = node_context.split(". ")        
+#             node_context_embeddings = embedding_function.embed_documents(node_context_list)
+#             similarities = [cosine_similarity(np.array(question_embedding).reshape(1, -1), np.array(node_context_embedding).reshape(1, -1)) for node_context_embedding in node_context_embeddings]
+#             similarities = sorted([(e, i) for i, e in enumerate(similarities)], reverse=True)
+#             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
+#             high_similarity_indices = [s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold]
+#             if len(high_similarity_indices) > max_number_of_high_similarity_context_per_node:
+#                 high_similarity_indices = high_similarity_indices[:max_number_of_high_similarity_context_per_node]
+#             high_similarity_context = [node_context_list[index] for index in high_similarity_indices]
+#             if edge_evidence:
+#                 high_similarity_context = list(map(lambda x:x+'.', high_similarity_context))
+#                 context_table = context_table[context_table.context.isin(high_similarity_context)]
+#                 context_table.loc[:, "context"] =  context_table.source + " " + context_table.predicate.str.lower() + " " + context_table.target + " and Provenance of this association is " + context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " + context_table.evidence.astype('str') + "\n\n"                
+#                 node_context_extracted += context_table.context.str.cat(sep=' ')
+#             else:
+#                 node_context_extracted += ". ".join(high_similarity_context)
+#                 node_context_extracted += ". "
+#         return node_context_extracted
     
+
+
+# def retrieve_context(question, vectorstore, embedding_function, node_context_df, context_volume, context_sim_threshold, context_sim_min_threshold, edge_evidence, api=True):
+#     # Extract entities using biomedical_entity_extractor
+#     entity_dict = biomedical_entity_extractor(question)
+#     node_hits = []
+    
+#     if entity_dict:
+#         # Collect entities with their types
+#         all_entities_with_types = []
+#         for entity_type in ["Diseases", "Drugs", "Genes"]:
+#             entities = entity_dict.get(entity_type, [])
+#             # Pair each entity with its type
+#             all_entities_with_types.extend([(entity, entity_type) for entity in entities])
+        
+#         # Avoid division by zero if no entities are found
+#         if not all_entities_with_types:
+#             all_entities_with_types = [(question, None)]  # Fallback to question with no type
+#             max_number_of_high_similarity_context_per_node = context_volume // 5
+#         else:
+#             max_number_of_high_similarity_context_per_node = int(context_volume / len(all_entities_with_types))
+        
+#         # Perform similarity search for each entity
+#         for entity, entity_type in all_entities_with_types:
+#             # If entity_type is None (fallback case), use the question directly
+#             search_term = entity if entity_type else question
+#             node_search_result = vectorstore.similarity_search_with_score(search_term, k=1)
+#             print("Thu print")
+#             print(f"Search result for entity '{search_term}': {node_search_result}")
+            
+#             if node_search_result:
+#                 # Store the node name along with the entity type
+#                 node_hits.append((node_search_result[0][0].page_content, entity_type))
+#             else:
+#                 print(f"No results found for entity: {search_term}")
+                
+#         # Extract context for each node hit
+#         question_embedding = embedding_function.embed_query(question)
+#         node_context_extracted = ""
+#         for node_name, entity_type in node_hits:
+#             if not api:
+#                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+#                 context_table = None  # Not used in non-API mode
+#             else:
+#                 # Call the appropriate API based on entity type
+#                 if entity_type == "Diseases":
+#                     node_context, context_table = get_context_using_spoke_api_disease(node_name)
+#                 elif entity_type == "Drugs":
+#                     node_context, context_table = get_context_using_spoke_api_drug(node_name)
+#                 elif entity_type == "Genes":
+#                     node_context, context_table = get_context_using_spoke_api_gene(node_name)
+#                 else:
+#                     # Fallback case (when entity_type is None)
+#                     node_context, context_table = get_context_using_spoke_api_disease(node_name)  # Default to disease API for fallback
+                
+#             node_context_list = node_context.split(". ")        
+#             node_context_embeddings = embedding_function.embed_documents(node_context_list)
+#             similarities = [cosine_similarity(np.array(question_embedding).reshape(1, -1), np.array(node_context_embedding).reshape(1, -1)) for node_context_embedding in node_context_embeddings]
+#             similarities = sorted([(e, i) for i, e in enumerate(similarities)], reverse=True)
+#             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
+#             high_similarity_indices = [s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold]
+#             if len(high_similarity_indices) > max_number_of_high_similarity_context_per_node:
+#                 high_similarity_indices = high_similarity_indices[:max_number_of_high_similarity_context_per_node]
+#             high_similarity_context = [node_context_list[index] for index in high_similarity_indices]            
+#             if edge_evidence:
+#                 high_similarity_context = list(map(lambda x: x + '.', high_similarity_context)) 
+#                 context_table = context_table[context_table.context.isin(high_similarity_context)]
+#                 context_table.loc[:, "context"] = context_table.source + " " + context_table.predicate.str.lower() + " " + context_table.target + " and Provenance of this association is " + context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " + context_table.evidence.astype('str') + "\n\n"                
+#                 node_context_extracted += context_table.context.str.cat(sep=' ')
+#             else:
+#                 node_context_extracted += ". ".join(high_similarity_context)
+#                 node_context_extracted += ". "
+#         return node_context_extracted
+#     else:
+#         # Fallback if no entities are extracted
+#         node_hits = vectorstore.similarity_search_with_score(question, k=5)
+#         max_number_of_high_similarity_context_per_node = int(context_volume / 5)
+#         question_embedding = embedding_function.embed_query(question)
+#         node_context_extracted = ""
+#         for node in node_hits:
+#             node_name = node[0].page_content
+#             if not api:
+#                 node_context = node_context_df[node_context_df.node_name == node_name].node_context.values[0]
+#                 context_table = None
+#             else:
+#                 # Default to disease API for fallback case
+#                 node_context, context_table = get_context_using_spoke_api_disease(node_name)
+#             node_context_list = node_context.split(". ")        
+#             node_context_embeddings = embedding_function.embed_documents(node_context_list)
+#             similarities = [cosine_similarity(np.array(question_embedding).reshape(1, -1), np.array(node_context_embedding).reshape(1, -1)) for node_context_embedding in node_context_embeddings]
+#             similarities = sorted([(e, i) for i, e in enumerate(similarities)], reverse=True)
+#             percentile_threshold = np.percentile([s[0] for s in similarities], context_sim_threshold)
+#             high_similarity_indices = [s[1] for s in similarities if s[0] > percentile_threshold and s[0] > context_sim_min_threshold]
+#             if len(high_similarity_indices) > max_number_of_high_similarity_context_per_node:
+#                 high_similarity_indices = high_similarity_indices[:max_number_of_high_similarity_context_per_node]
+#             high_similarity_context = [node_context_list[index] for index in high_similarity_indices]
+#             if edge_evidence:
+#                 high_similarity_context = list(map(lambda x: x + '.', high_similarity_context))
+#                 context_table = context_table[context_table.context.isin(high_similarity_context)]
+#                 context_table.loc[:, "context"] = context_table.source + " " + context_table.predicate.str.lower() + " " + context_table.target + " and Provenance of this association is " + context_table.provenance + " and attributes associated with this association is in the following JSON format:\n " + context_table.evidence.astype('str') + "\n\n"                
+#                 node_context_extracted += context_table.context.str.cat(sep=' ')
+#             else:
+#                 node_context_extracted += ". ".join(high_similarity_context)
+#                 node_context_extracted += ". "
+#         return node_context_extracted
+
 def interactive(question, vectorstore, node_context_df, embedding_function_for_context_retrieval, llm_type, edge_evidence, system_prompt, api=True, llama_method="method-1"):
     print(" ")
     input("Press enter for Step 1 - Disease entity extraction using GPT-3.5-Turbo")
