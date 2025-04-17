@@ -233,5 +233,249 @@ def get_context_using_spoke_api_gene(node_value):
 
     return context, merge_2
 
+def get_context_using_spoke_api_drugs(node_value):
+    type_end_point = "/api/v1/types"
+    result = get_spoke_api_resp(config_data['BASE_URI'], type_end_point)
+    data_spoke_types = result.json()
+    node_types = list(data_spoke_types["nodes"].keys())
+    edge_types = list(data_spoke_types["edges"].keys())
+    node_types_to_remove = ["DatabaseTimestamp", "Version"]
+    filtered_node_types = [nt for nt in node_types if nt not in node_types_to_remove]
+
+    api_params = {
+        'node_filters': filtered_node_types,
+        'edge_filters': edge_types,
+        'cutoff_Compound_max_phase': config_data['cutoff_Compound_max_phase'],
+        'cutoff_Protein_source': config_data['cutoff_Protein_source'],
+        'cutoff_DaG_diseases_sources': config_data['cutoff_DaG_diseases_sources'],
+        'cutoff_DaG_textmining': config_data['cutoff_DaG_textmining'],
+        'cutoff_CtD_phase': config_data['cutoff_CtD_phase'],
+        'cutoff_PiP_confidence': config_data['cutoff_PiP_confidence'],
+        'cutoff_ACTeG_level': config_data['cutoff_ACTeG_level'],
+        'cutoff_DpL_average_prevalence': config_data['cutoff_DpL_average_prevalence'],
+        'depth': config_data['depth']
+    }
+
+    node_type = "Compound"
+    attribute = "name"
+    nbr_end_point = f"/api/v1/neighborhood/{node_type}/{attribute}/{node_value}"
+    result = get_spoke_api_resp(config_data['BASE_URI'], nbr_end_point, params=api_params)
+    node_context = result.json()
+
+    nbr_nodes = []
+    nbr_edges = []
+
+    for item in node_context:
+        if "_" not in item["data"]["neo4j_type"]:
+            try:
+                if item["data"]["neo4j_type"] == "Protein":
+                    nbr_nodes.append((
+                        item["data"]["neo4j_type"],
+                        item["data"]["id"],
+                        item["data"]["properties"]["description"]
+                    ))
+                else:
+                    nbr_nodes.append((
+                        item["data"]["neo4j_type"],
+                        item["data"]["id"],
+                        item["data"]["properties"]["name"]
+                    ))
+            except:
+                nbr_nodes.append((
+                    item["data"]["neo4j_type"],
+                    item["data"]["id"],
+                    item["data"]["properties"]["identifier"]
+                ))
+        elif "_" in item["data"]["neo4j_type"]:
+            try:
+                provenance = ", ".join(item["data"]["properties"]["sources"])
+            except:
+                try:
+                    provenance = item["data"]["properties"]["source"]
+                    if isinstance(provenance, list):
+                        provenance = ", ".join(provenance)
+                except:
+                    try:
+                        preprint_list = ast.literal_eval(item["data"]["properties"].get("preprint_list", "[]"))
+                        if preprint_list:
+                            provenance = ", ".join(preprint_list)
+                        else:
+                            pmid_list = ast.literal_eval(item["data"]["properties"].get("pmid_list", "[]"))
+                            pmid_list = list(map(lambda x: "pubmedId:" + x, pmid_list))
+                            provenance = ", ".join(pmid_list) if pmid_list else "Based on data from ISB"
+                    except:
+                        provenance = "SPOKE-KG"
+            evidence = item["data"].get("properties", None)
+            nbr_edges.append((
+                item["data"]["source"],
+                item["data"]["neo4j_type"],
+                item["data"]["target"],
+                provenance,
+                evidence
+            ))
+
+    nbr_nodes_df = pd.DataFrame(nbr_nodes, columns=["node_type", "node_id", "node_name"])
+    nbr_edges_df = pd.DataFrame(nbr_edges, columns=["source", "edge_type", "target", "provenance", "evidence"])
+
+    merge_1 = pd.merge(nbr_edges_df, nbr_nodes_df, left_on="source", right_on="node_id").drop("node_id", axis=1)
+    merge_1["node_name"] = merge_1["node_type"] + " " + merge_1["node_name"]
+    merge_1.drop(["source", "node_type"], axis=1, inplace=True)
+    merge_1.rename(columns={"node_name": "source"}, inplace=True)
+
+    merge_2 = pd.merge(merge_1, nbr_nodes_df, left_on="target", right_on="node_id").drop("node_id", axis=1)
+    merge_2["node_name"] = merge_2["node_type"] + " " + merge_2["node_name"]
+    merge_2.drop(["target", "node_type"], axis=1, inplace=True)
+    merge_2.rename(columns={"node_name": "target"}, inplace=True)
+
+    merge_2 = merge_2[["source", "edge_type", "target", "provenance", "evidence"]]
+    merge_2["predicate"] = merge_2["edge_type"].apply(lambda x: x.split("_")[0])
+    merge_2["context"] = merge_2["source"] + " " + merge_2["predicate"].str.lower() + " " + merge_2["target"] + \
+                         " and Provenance of this association is " + merge_2["provenance"] + "."
+
+    # Thông tin riêng cho Compound (node gốc)
+    root_node = next((item for item in node_context if item["data"].get("neo4j_root", 0) == 1), None)
+    if root_node:
+        props = root_node["data"]["properties"]
+        compound_extra = []
+        if "name" in props:
+            compound_extra.append(f"Compound name: {props['name']}")
+        if "identifier" in props:
+            compound_extra.append(f"Identifier: {props['identifier']}")
+        if "chembl_id" in props:
+            compound_extra.append(f"ChEMBL ID: {props['chembl_id']}")
+        if "standardized_smiles" in props:
+            compound_extra.append("Standardized SMILES available.")
+        if "synonyms" in props:
+            synonyms = ", ".join(props["synonyms"])
+            compound_extra.append(f"Synonyms: {synonyms}")
+        if "max_phase" in props:
+            compound_extra.append(f"Max clinical trial phase: {props['max_phase']}")
+        if "sources" in props:
+            compound_extra.append(f"Sources: {', '.join(props['sources'])}")
+        extra_info = " ".join(compound_extra)
+    else:
+        extra_info = ""
+
+    context = merge_2["context"].str.cat(sep=' ') + " " + extra_info
+
+    return context, merge_2
+
+
+
+def get_context_using_spoke_api_drugs_v1(node_value):
+    type_end_point = "/api/v1/types"
+    result = get_spoke_api_resp(config_data['BASE_URI'], type_end_point)
+    data_spoke_types = result.json()
+    node_types = list(data_spoke_types["nodes"].keys())
+    edge_types = list(data_spoke_types["edges"].keys())
+    node_types_to_remove = ["DatabaseTimestamp", "Version"]
+    filtered_node_types = [nt for nt in node_types if nt not in node_types_to_remove]
+
+    api_params = {
+        'node_filters': filtered_node_types,
+        'edge_filters': edge_types,
+        'cutoff_Compound_max_phase': config_data['cutoff_Compound_max_phase'],
+        'cutoff_Protein_source': config_data['cutoff_Protein_source'],
+        'cutoff_DaG_diseases_sources': config_data['cutoff_DaG_diseases_sources'],
+        'cutoff_DaG_textmining': config_data['cutoff_DaG_textmining'],
+        'cutoff_CtD_phase': config_data['cutoff_CtD_phase'],
+        'cutoff_PiP_confidence': config_data['cutoff_PiP_confidence'],
+        'cutoff_ACTeG_level': config_data['cutoff_ACTeG_level'],
+        'cutoff_DpL_average_prevalence': config_data['cutoff_DpL_average_prevalence'],
+        'depth': config_data['depth']
+    }
+    node_type = "Compound"
+    attribute = "name"
+    nbr_end_point = f"/api/v1/neighborhood/{node_type}/{attribute}/{node_value}"
+    result = get_spoke_api_resp(config_data['BASE_URI'], nbr_end_point, params=api_params)
+    node_context = result.json()
+
+    nbr_nodes = []
+    nbr_edges = []
+
+    for item in node_context:
+        if "_" not in item["data"]["neo4j_type"]:
+            properties = item["data"]["properties"]
+            node_name = properties.get("name", properties.get("description", properties.get("identifier", "Unknown")))
+            nbr_nodes.append((
+                item["data"]["neo4j_type"],
+                item["data"]["id"],
+                node_name
+            ))
+        elif "_" in item["data"]["neo4j_type"]:
+            try:
+                provenance = ", ".join(item["data"]["properties"]["sources"])
+            except:
+                try:
+                    provenance = item["data"]["properties"]["source"]
+                    if isinstance(provenance, list):
+                        provenance = ", ".join(provenance)
+                except:
+                    try:
+                        preprint_list = ast.literal_eval(item["data"]["properties"].get("preprint_list", "[]"))
+                        if preprint_list:
+                            provenance = ", ".join(preprint_list)
+                        else:
+                            pmid_list = ast.literal_eval(item["data"]["properties"].get("pmid_list", "[]"))
+                            pmid_list = list(map(lambda x: "pubmedId:" + x, pmid_list))
+                            provenance = ", ".join(pmid_list) if pmid_list else "Based on data from ISB"
+                    except:
+                        provenance = "SPOKE-KG"
+            evidence = item["data"].get("properties", None)
+            nbr_edges.append((
+                item["data"]["source"],
+                item["data"]["neo4j_type"],
+                item["data"]["target"],
+                provenance,
+                evidence
+            ))
+
+    nbr_nodes_df = pd.DataFrame(nbr_nodes, columns=["node_type", "node_id", "node_name"])
+    nbr_edges_df = pd.DataFrame(nbr_edges, columns=["source", "edge_type", "target", "provenance", "evidence"])
+
+    merge_1 = pd.merge(nbr_edges_df, nbr_nodes_df, left_on="source", right_on="node_id").drop("node_id", axis=1)
+    merge_1["node_name"] = merge_1["node_type"] + " " + merge_1["node_name"]
+    merge_1.drop(["source", "node_type"], axis=1, inplace=True)
+    merge_1.rename(columns={"node_name": "source"}, inplace=True)
+
+    merge_2 = pd.merge(merge_1, nbr_nodes_df, left_on="target", right_on="node_id").drop("node_id", axis=1)
+    merge_2["node_name"] = merge_2["node_type"] + " " + merge_2["node_name"]
+    merge_2.drop(["target", "node_type"], axis=1, inplace=True)
+    merge_2.rename(columns={"node_name": "target"}, inplace=True)
+
+    merge_2 = merge_2[["source", "edge_type", "target", "provenance", "evidence"]]
+    merge_2["predicate"] = merge_2["edge_type"].apply(lambda x: x.split("_")[0])
+    merge_2["context"] = merge_2["source"] + " " + merge_2["predicate"].str.lower() + " " + merge_2["target"] + \
+                         " and Provenance of this association is " + merge_2["provenance"] + "."
+
+    # Lấy thêm thông tin riêng cho Compound
+    root_node = next((item for item in node_context if item["data"].get("neo4j_root", 0) == 1), None)
+    if root_node:
+        props = root_node["data"]["properties"]
+        compound_extra = []
+        if "name" in props:
+            compound_extra.append(f"{node_value} is a compound")
+        if "max_phase" in props:
+            compound_extra.append(f"It has reached clinical trial phase {props['max_phase']}")
+        if "smiles" in props:
+            compound_extra.append(f"Its SMILES structure is {props['smiles']}")
+        if "synonyms" in props and props["synonyms"]:
+            compound_extra.append(f"Synonyms include: {', '.join(props['synonyms'])}")
+        if "sources" in props:
+            compound_extra.append(f"Data sourced from: {', '.join(props['sources'])}")
+        if "identifier" in props:
+            compound_extra.append(f"Its identifier is {props['identifier']}")
+
+        extra_info = " ".join(compound_extra)
+    else:
+        extra_info = ""
+
+    context = merge_2["context"].str.cat(sep=' ') + " " + extra_info
+
+    return context, merge_2
+
+
 # print(get_context_using_spoke_api_disease("Alagille syndrome"))
 print(get_context_using_spoke_api_gene("UGT1A1"))
+# print(get_context_using_spoke_api_drugs("Setmelanotide"))
+# print(get_context_using_spoke_api_drugs("Setmelanotide"))

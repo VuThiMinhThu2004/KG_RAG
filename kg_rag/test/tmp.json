@@ -1,0 +1,10 @@
+{
+    "1": {
+      "Question": "Which benign, autosomal recessive hyperbilirubinemia syndrome is caused by a mutation in the UGT1A1 gene on chromosome 2?",
+      "Golden": "Gilbert syndrome"
+    },
+    "2": {
+      "Question": "Is the craniosynostosis seen in Shprintzen–Goldberg syndrome caused by a mutation in the fibrillin-1 gene?",
+      "Golden": "No"
+    }
+}

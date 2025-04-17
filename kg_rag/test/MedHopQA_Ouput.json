@@ -1,0 +1,77 @@
+{
+  "1": {
+    "Question": "Which benign, autosomal recessive hyperbilirubinemia syndrome is caused by a mutation in the UGT1A1 gene on chromosome 2?",
+    "Golden": "Gilbert syndrome",
+    "Answer": "The benign, autosomal recessive hyperbilirubinemia syndrome caused by a mutation in the UGT1A1 gene on chromosome 2 is known as Gilbert syndrome. The Provenance of this association is DISEASES database - https://diseases.jensenlab.org."
+  },
+  "2": {
+    "Question": "Is the craniosynostosis seen in Shprintzen–Goldberg syndrome caused by a mutation in the fibrillin-1 gene?",
+    "Golden": "No",
+    "Answer": "Craniosynostosis is indeed associated with mutations in the FBN1 gene, which encodes the fibrillin-1 protein. Therefore, it can be inferred that craniosynostosis in Shprintzen–Goldberg syndrome may be caused by a mutation in the fibrillin-1 gene. The association of craniosynostosis with the FBN1 gene is corroborated by the Provenance information stating its relevance (HPO).\n\nProvenance: HPO."
+  },
+  "3": {
+    "Question": "Which gene containing a helicase domain is mutated in some patients with Smith–Fineman–Myers syndrome?",
+    "Golden": "ATRX",
+    "Answer": "The gene containing a helicase domain that is mutated in some patients with Smith–Fineman–Myers syndrome is the DDX3X gene. \n\nProvenance of this association is DISEASES database - https://diseases.jensenlab.org."
+  },
+  "4": {
+    "Question": "Which autoimmune disease causes uveitis and involves inflammation of the lungs and vasculitis?",
+    "Golden": "Granulomatosis with polyangiitis",
+    "Answer": "The autoimmune disease that causes uveitis and involves inflammation of the lungs and vasculitis is Vasculitis. Provenance of this association is NCBI PubMed."
+  },
+  "5": {
+    "Question": "Which chromosome 2 gene was not found to be abnormal in patients with Holmes-Collins syndrome?",
+    "Golden": "HOXD10",
+    "Answer": "The gene on chromosome 2 that was not found to be abnormal in patients with Holmes-Collins syndrome is MYH8. Provenance of this association is GWAS Catalog."
+  },
+  "6": {
+    "Question": "Are Rett syndrome and Huntington's disease caused by the same chromosomal abnormalities?",
+    "Golden": "No",
+    "Answer": "No, Rett syndrome and Huntington's disease are not caused by the same chromosomal abnormalities. Rett syndrome is primarily associated with mutations in the MECP2 gene on the X chromosome, while Huntington's disease is linked to mutations in the HTT gene on chromosome 4. \n\nProvenance: DISEASES and NCBI PubMed."
+  },
+  "7": {
+    "Question": "Which protein, if deficient, can lead to weakened connective tissue and potentially increase the risk of developing Marfan syndrome?",
+    "Golden": "Fibrillin-1",
+    "Answer": "The protein that, if deficient, can lead to weakened connective tissue and potentially increase the risk of developing Marfan syndrome is Fibrillin-1 (FBN1). This association is cited from the DISEASES database - https://diseases.jensenlab.org."
+  },
+  "8": {
+    "Question": "Which lactate dehydrogenase tetramer is most common in the primary organ of the nervous system?",
+    "Golden": "LDH-1",
+    "Answer": "The most common lactate dehydrogenase tetramer in the primary organ of the nervous system (the brain) is LDH5 (or LDH-A4). This isozyme is predominantly found in muscle and brain tissues, reflecting the metabolic needs of these organs. \n\nProvenance of this association is GWAS Catalog."
+  },
+  "9": {
+    "Question": "Which type of cell is primarily involved in the cytotoxic reaction against epithelial basal cells in oral lichen planus?",
+    "Golden": "CD8+ T cell",
+    "Answer": "The type of cell primarily involved in the cytotoxic reaction against epithelial basal cells in oral lichen planus is the CD8+ cytotoxic T lymphocyte (CTL). \n\nProvenance of this association is DISEASES database - https://diseases.jensenlab.org."
+  },
+  "10": {
+    "Question": "What is the second most important cause of dementia after Alzheimer's disease?",
+    "Golden": "Microinfarcts",
+    "Answer": "The second most important cause of dementia after Alzheimer's disease is vascular dementia. This association is supported by its provenance from the Disease Ontology. \n\nProvenance: Disease Ontology."
+  },
+  "11": {
+    "Question": "What chemical compound found in plastics is associated with early puberty in girls?",
+    "Golden": "Bisphenol A (BPA)",
+    "Answer": "The chemical compound found in plastics that is associated with early puberty in girls is Bisphenol A (BPA). Provenance of this association is GWAS Catalog."
+  },
+  "12": {
+    "Question": "Which bacterium, associated with household pets, can cause necrotizing fasciitis in humans?",
+    "Golden": "Capnocytophaga canimorsus",
+    "Answer": "The bacterium associated with household pets that can cause necrotizing fasciitis in humans is *Capnocytophaga canimorsus*. This bacterium is often found in the mouths of dogs and cats. It's important to seek guidance from a healthcare professional if there are suspicions of infection or exposure to this bacterium, as early treatment is crucial.\n\nProvenance of this information is NCBI PubMed."
+  },
+  "13": {
+    "Question": "What medical procedure can be used to administer activated charcoal in cases of tricyclic antidepressant overdose?",
+    "Golden": "Nasogastric intubation",
+    "Answer": "In cases of tricyclic antidepressant overdose, activated charcoal can be administered via an oral route or via a nasogastric tube if the patient is unconscious or unable to protect their airway. It is essential to seek guidance from a healthcare professional for proper management and intervention during such medical emergencies. \n\nProvenance of this association is GWAS Catalog."
+  },
+  "14": {
+    "Question": "Which occlusive barrier recommended for treating xeroderma is also recognized by the U.S. FDA as an approved over-the-counter skin protectant?",
+    "Golden": "Petroleum jelly (petrolatum)",
+    "Answer": "The occlusive barrier recommended for treating xeroderma and recognized by the U.S. FDA as an approved over-the-counter skin protectant is petrolatum. This substance helps to create a barrier that retains moisture in the skin. However, it's advisable to consult with a healthcare professional before use to ensure it's appropriate for your specific needs.\n\nProvenance of this association is GWAS Catalog."
+  },
+  "15": {
+    "Question": "Which recognized type of osteochondritis is characterized by uneven vertebral growth and kyphosis that typically develops during adolescence?",
+    "Golden": "Scheuermann's disease",
+    "Answer": "The recognized type of osteochondritis characterized by uneven vertebral growth and kyphosis that typically develops during adolescence is Scheuermann's disease. \n\nProvenance: Disease Ontology."
+  }
+}

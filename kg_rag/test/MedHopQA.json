@@ -1,0 +1,63 @@
+{
+    "1": {
+      "Question": "Which benign, autosomal recessive hyperbilirubinemia syndrome is caused by a mutation in the UGT1A1 gene on chromosome 2?",
+      "Golden": "Gilbert syndrome"
+    },
+    "2": {
+      "Question": "Is the craniosynostosis seen in Shprintzen–Goldberg syndrome caused by a mutation in the fibrillin-1 gene?",
+      "Golden": "No"
+    },
+    "3": {
+      "Question": "Which gene containing a helicase domain is mutated in some patients with Smith–Fineman–Myers syndrome?",
+      "Golden": "ATRX"
+    },
+    "4": {
+      "Question": "Which autoimmune disease causes uveitis and involves inflammation of the lungs and vasculitis?",
+      "Golden": "Granulomatosis with polyangiitis"
+    },
+    "5": {
+      "Question": "Which chromosome 2 gene was not found to be abnormal in patients with Holmes-Collins syndrome?",
+      "Golden": "HOXD10"
+    },
+    "6": {
+      "Question": "Are Rett syndrome and Huntington's disease caused by the same chromosomal abnormalities?",
+      "Golden": "No"
+    },
+    "7": {
+      "Question": "Which protein, if deficient, can lead to weakened connective tissue and potentially increase the risk of developing Marfan syndrome?",
+      "Golden": "Fibrillin-1"
+    },
+    "8": {
+      "Question": "Which lactate dehydrogenase tetramer is most common in the primary organ of the nervous system?",
+      "Golden": "LDH-1"
+    },
+    "9": {
+      "Question": "Which type of cell is primarily involved in the cytotoxic reaction against epithelial basal cells in oral lichen planus?",
+      "Golden": "CD8+ T cell"
+    },
+    "10": {
+      "Question": "What is the second most important cause of dementia after Alzheimer's disease?",
+      "Golden": "Microinfarcts"
+    },
+    "11": {
+      "Question": "What chemical compound found in plastics is associated with early puberty in girls?",
+      "Golden": "Bisphenol A (BPA)"
+    },
+    "12": {
+      "Question": "Which bacterium, associated with household pets, can cause necrotizing fasciitis in humans?",
+      "Golden": "Capnocytophaga canimorsus"
+    },
+    "13": {
+      "Question": "What medical procedure can be used to administer activated charcoal in cases of tricyclic antidepressant overdose?",
+      "Golden": "Nasogastric intubation"
+    },
+    "14": {
+      "Question": "Which occlusive barrier recommended for treating xeroderma is also recognized by the U.S. FDA as an approved over-the-counter skin protectant?",
+      "Golden": "Petroleum jelly (petrolatum)"
+    },
+    "15": {
+      "Question": "Which recognized type of osteochondritis is characterized by uneven vertebral growth and kyphosis that typically develops during adolescence?",
+      "Golden": "Scheuermann's disease"
+    }
+  }
+  

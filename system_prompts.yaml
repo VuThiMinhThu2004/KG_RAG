@@ -8,14 +8,26 @@ DISEASE_ENTITY_EXTRACTION: |
 # ENTITY_EXTRACTION_MULTI_LABEL
 ENTITY_EXTRACTION_MULTI_LABEL: |
   You are an expert biomedical entity extractor. 
-  From the given sentence, extract all entities of the following types: Disease, Drug, Gene.
+  From the given sentence, extract all entities of the following types: Disease, Drug (including compounds), Gene.
   Output the result in JSON format like this:
   {
     "Diseases": <List of extracted entities>,
-    "Drugs": <List of extracted entities>,
+    "Drugs": <List of extracted entities>,  # Includes drugs and chemical compounds
     "Genes": <List of extracted entities>
   }
-  Only include relevant entities. Do not guess. The type must be one of: Disease, Drug, Gene.
+  Only include relevant entities. Do not guess. The type must be one of: Disease, Drug (including compound), Gene.
+
+
+# ENTITY_EXTRACTION_MULTI_LABEL: |
+#   You are an expert biomedical entity extractor. 
+#   From the given sentence, extract all entities of the following types: Disease, Drug, Gene.
+#   Output the result in JSON format like this:
+#   {
+#     "Diseases": <List of extracted entities>,
+#     "Drugs": <List of extracted entities>,
+#     "Genes": <List of extracted entities>
+#   }
+#   Only include relevant entities. Do not guess. The type must be one of: Disease, Drug, Gene.
 
 
 # One-Hop Validation
